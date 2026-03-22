@@ -68,9 +68,22 @@ bool GuiManager::initialize(int width, int height) {
     ImGui::StyleColorsDark();
     Theme::ApplyStyle();
 
-    // Load window icon from assets/icon.svg
+    // Load window icon from assets/icon.svg (resolve path relative to executable)
     {
-        NSVGimage* svg = nsvgParseFromFile("../assets/icon.svg", "px", 96.0f);
+        std::string icon_path;
+        char* base = SDL_GetBasePath();
+        if (base) {
+            icon_path = std::string(base) + "assets/icon.svg";
+            SDL_free(base);
+        }
+        // Fallback paths for development and installed layouts
+        NSVGimage* svg = nullptr;
+        if (!icon_path.empty())
+            svg = nsvgParseFromFile(icon_path.c_str(), "px", 96.0f);
+        if (!svg)
+            svg = nsvgParseFromFile("../assets/icon.svg", "px", 96.0f);
+        if (!svg)
+            svg = nsvgParseFromFile("assets/icon.svg", "px", 96.0f);
         if (svg) {
             const int icon_size = 64;  // 64x64 icon
             NSVGrasterizer* rast = nsvgCreateRasterizer();

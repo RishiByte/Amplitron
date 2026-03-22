@@ -2,6 +2,15 @@
 
 !define APP_NAME "Amplitron"
 !define APP_EXE "Amplitron.exe"
+!define APP_VERSION "1.0.0.0"
+
+; Version metadata (helps Windows SmartScreen trust the installer)
+VIProductVersion "${APP_VERSION}"
+VIAddVersionKey "ProductName" "${APP_NAME}"
+VIAddVersionKey "CompanyName" "Amplitron"
+VIAddVersionKey "FileDescription" "Amplitron Guitar Amp Simulator Installer"
+VIAddVersionKey "FileVersion" "${APP_VERSION}"
+VIAddVersionKey "LegalCopyright" "MIT License"
 
 Name "${APP_NAME}"
 OutFile "${OUTFILE}"

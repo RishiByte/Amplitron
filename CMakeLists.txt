@@ -98,7 +98,14 @@ set(APP_SOURCES
     src/gui/pedal_widget.cpp
 )
 
-add_executable(guitar-amp ${APP_SOURCES} ${IMGUI_SOURCES})
+# Windows resource file for app icon
+if(WIN32 AND NOT MSVC)
+    set(WIN_RC ${CMAKE_SOURCE_DIR}/assets/app.rc)
+    set(CMAKE_RC_COMPILER_INIT windres)
+    enable_language(RC)
+endif()
+
+add_executable(guitar-amp ${APP_SOURCES} ${IMGUI_SOURCES} $<$<PLATFORM_ID:Windows>:${WIN_RC}>)
 
 target_include_directories(guitar-amp PRIVATE
     ${CMAKE_SOURCE_DIR}/src
@@ -118,6 +125,11 @@ target_link_libraries(guitar-amp PRIVATE
 
 if(WIN32)
     target_link_libraries(guitar-amp PRIVATE winmm ole32 setupapi)
+    if(NOT MSVC)
+        target_link_options(guitar-amp PRIVATE -mwindows)
+    else()
+        set_target_properties(guitar-amp PROPERTIES WIN32_EXECUTABLE TRUE)
+    endif()
 endif()
 
 if(UNIX AND NOT APPLE)
