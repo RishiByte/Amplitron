@@ -7,105 +7,89 @@ on:
     branches: [ main, develop ]
 
 jobs:
-  test:
-    name: Test on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        include:
-          - os: ubuntu-latest
-            cmake_preset: linux
-          - os: windows-latest
-            cmake_preset: windows
-          - os: macos-latest
-            cmake_preset: macos
-
+  test-linux:
+    name: Test on Linux
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install Dependencies (Ubuntu)
-      if: runner.os == 'Linux'
+    - name: Install Dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y \
-          build-essential \
-          cmake \
-          libportaudio2 \
-          portaudio19-dev \
-          libsdl2-dev \
-          libgl1-mesa-dev \
-          libglu1-mesa-dev
-
-    - name: Install Dependencies (macOS)
-      if: runner.os == 'macOS'
-      run: |
-        brew install portaudio sdl2 cmake
-        echo "CMAKE_PREFIX_PATH=$(brew --prefix portaudio);$(brew --prefix sdl2)" >> $GITHUB_ENV
-
-    - name: Install Dependencies (Windows)
-      if: runner.os == 'Windows'
-      shell: powershell
-      run: |
-        # MSYS2 setup for MinGW
-        choco install msys2 -y
-        C:\tools\msys2\usr\bin\bash.exe -lc "pacman -Syu --noconfirm"
-        C:\tools\msys2\usr\bin\bash.exe -lc "pacman -S --noconfirm mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-portaudio mingw-w64-x86_64-SDL2"
+          build-essential cmake \
+          libportaudio2 portaudio19-dev \
+          libsdl2-dev libgl1-mesa-dev libglu1-mesa-dev
 
     - name: Setup ImGui
-      run: |
-        git clone --depth 1 --branch v1.90.1 https://github.com/ocornut/imgui.git external/imgui
+      run: git clone --depth 1 --branch v1.90.1 https://github.com/ocornut/imgui.git external/imgui
 
-    - name: Configure CMake (Linux/macOS)
-      if: runner.os != 'Windows'
+    - name: Build
       run: |
-        mkdir -p build
-        cd build
+        mkdir -p build && cd build
+        cmake -DCMAKE_BUILD_TYPE=Release ..
+        make -j$(nproc)
+
+    - name: Run Tests
+      run: cd build && ./amplitron-tests
+
+  test-macos:
+    name: Test on macOS
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Dependencies
+      run: |
+        brew install portaudio sdl2
+
+    - name: Setup ImGui
+      run: git clone --depth 1 --branch v1.90.1 https://github.com/ocornut/imgui.git external/imgui
+
+    - name: Build
+      run: |
+        HOMEBREW_PREFIX=$(brew --prefix)
+        mkdir -p build && cd build
         cmake -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH:-}" ..
+          -DPORTAUDIO_INCLUDE_DIRS="$HOMEBREW_PREFIX/include" \
+          -DPORTAUDIO_LIBRARIES="$HOMEBREW_PREFIX/lib/libportaudio.dylib" \
+          -DSDL2_INCLUDE_DIRS="$HOMEBREW_PREFIX/include/SDL2" \
+          -DSDL2_LIBRARIES="$HOMEBREW_PREFIX/lib/libSDL2.dylib" \
+          ..
+        make -j$(sysctl -n hw.ncpu)
 
-    - name: Configure CMake (Windows)
-      if: runner.os == 'Windows'
-      shell: C:\tools\msys2\usr\bin\bash.exe -leo pipefail {0}
+    - name: Run Tests
+      run: cd build && ./amplitron-tests
+
+  test-windows:
+    name: Test on Windows
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        update: true
+        install: >-
+          mingw-w64-x86_64-gcc
+          mingw-w64-x86_64-cmake
+          mingw-w64-x86_64-portaudio
+          mingw-w64-x86_64-SDL2
+          make
+
+    - name: Setup ImGui
+      shell: msys2 {0}
+      run: git clone --depth 1 --branch v1.90.1 https://github.com/ocornut/imgui.git external/imgui
+
+    - name: Build
+      shell: msys2 {0}
       run: |
-        export PATH="/mingw64/bin:$PATH"
-        mkdir -p build
-        cd build
+        mkdir -p build && cd build
         cmake -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release ..
-
-    - name: Build (Linux/macOS)
-      if: runner.os != 'Windows'
-      run: |
-        cd build
-        make -j$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
-
-    - name: Build (Windows)
-      if: runner.os == 'Windows'
-      shell: C:\tools\msys2\usr\bin\bash.exe -leo pipefail {0}
-      run: |
-        export PATH="/mingw64/bin:$PATH"
-        cd build
         mingw32-make -j8
 
-    - name: Run Tests (Linux/macOS)
-      if: runner.os != 'Windows'
-      run: |
-        cd build
-        ./amplitron-tests
-
-    - name: Run Tests (Windows)
-      if: runner.os == 'Windows'
-      shell: C:\tools\msys2\usr\bin\bash.exe -leo pipefail {0}
-      run: |
-        export PATH="/mingw64/bin:$PATH"
-        cd build
-        ./amplitron-tests.exe
-
-    - name: Upload Test Results
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: test-results-${{ matrix.os }}
-        path: build/
-        retention-days: 7
+    - name: Run Tests
+      shell: msys2 {0}
+      run: cd build && ./amplitron-tests.exe

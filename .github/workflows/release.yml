@@ -139,20 +139,21 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Install Dependencies
-      run: |
-        brew install portaudio sdl2 cmake
-        echo "CMAKE_PREFIX_PATH=$(brew --prefix portaudio);$(brew --prefix sdl2)" >> $GITHUB_ENV
+      run: brew install portaudio sdl2
 
     - name: Setup ImGui
-      run: |
-        git clone --depth 1 --branch v1.90.1 https://github.com/ocornut/imgui.git external/imgui
+      run: git clone --depth 1 --branch v1.90.1 https://github.com/ocornut/imgui.git external/imgui
 
     - name: Build
       run: |
-        mkdir -p build
-        cd build
+        HOMEBREW_PREFIX=$(brew --prefix)
+        mkdir -p build && cd build
         cmake -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH:-}" ..
+          -DPORTAUDIO_INCLUDE_DIRS="$HOMEBREW_PREFIX/include" \
+          -DPORTAUDIO_LIBRARIES="$HOMEBREW_PREFIX/lib/libportaudio.dylib" \
+          -DSDL2_INCLUDE_DIRS="$HOMEBREW_PREFIX/include/SDL2" \
+          -DSDL2_LIBRARIES="$HOMEBREW_PREFIX/lib/libSDL2.dylib" \
+          ..
         make -j$(sysctl -n hw.ncpu)
 
     - name: Create App Bundle
@@ -203,79 +204,50 @@ jobs:
     name: Build Linux
     needs: create-release
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - name: Ubuntu
-            container: ubuntu:22.04
-            package_format: deb
-          - name: Fedora
-            container: fedora:38
-            package_format: rpm
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install Dependencies (Ubuntu)
-      if: matrix.name == 'Ubuntu'
+    - name: Install Dependencies
       run: |
-        apt-get update
-        apt-get install -y \
-          build-essential \
-          cmake \
-          libportaudio2 \
-          portaudio19-dev \
-          libsdl2-dev \
-          libgl1-mesa-dev \
-          libglu1-mesa-dev \
-          git
-
-    - name: Install Dependencies (Fedora)
-      if: matrix.name == 'Fedora'
-      run: |
-        dnf install -y \
-          gcc-c++ \
-          cmake \
-          portaudio-devel \
-          SDL2-devel \
-          mesa-libGL-devel \
-          mesa-libGLU-devel \
-          git
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential cmake \
+          libportaudio2 portaudio19-dev \
+          libsdl2-dev libgl1-mesa-dev libglu1-mesa-dev
 
     - name: Setup ImGui
-      run: |
-        git clone --depth 1 --branch v1.90.1 https://github.com/ocornut/imgui.git external/imgui
+      run: git clone --depth 1 --branch v1.90.1 https://github.com/ocornut/imgui.git external/imgui
 
     - name: Build
       run: |
-        mkdir -p build
-        cd build
-        cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr ..
+        mkdir -p build && cd build
+        cmake -DCMAKE_BUILD_TYPE=Release ..
         make -j$(nproc)
 
-    - name: Package (Generic Linux)
-      if: matrix.name == 'Ubuntu'
+    - name: Run Tests
+      run: cd build && ./amplitron-tests
+
+    - name: Package
       run: |
         mkdir -p release/Amplitron-Linux
         cp build/guitar-amp release/Amplitron-Linux/amplitron
         cp README.md release/Amplitron-Linux/
         cp -r assets release/Amplitron-Linux/ || true
         cp -r presets release/Amplitron-Linux/ || true
-        
-        # Create launcher script
-        cat > release/Amplitron-Linux/amplitron.sh << 'EOF'
+
+        cat > release/Amplitron-Linux/amplitron.sh << 'LAUNCHER'
         #!/bin/bash
         SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
         cd "$SCRIPT_DIR"
         ./amplitron
-        EOF
+        LAUNCHER
         chmod +x release/Amplitron-Linux/amplitron.sh
         chmod +x release/Amplitron-Linux/amplitron
-        
+
         cd release
         tar -czf Amplitron-Linux-x64.tar.gz Amplitron-Linux
 
-    - name: Upload Release Asset (Linux)
-      if: matrix.name == 'Ubuntu'
+    - name: Upload Release Asset
       uses: softprops/action-gh-release@v1
       with:
         tag_name: ${{ needs.create-release.outputs.version }}
