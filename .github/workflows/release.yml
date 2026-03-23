@@ -270,11 +270,32 @@ jobs:
         files: Amplitron-Linux-x64.tar.gz
 
   deploy-website:
-    name: Deploy Download Page
+    name: Deploy Download Page + Web Demo
     needs: [create-release, package-windows, package-macos, package-linux]
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v6
+
+    - name: Download Web Build
+      uses: actions/download-artifact@v8
+      with:
+        name: web-build
+        path: web-demo
+        run-id: ${{ github.event.workflow_run.id }}
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+      continue-on-error: true
+
+    - name: Merge Web Demo into docs
+      run: |
+        mkdir -p docs/demo
+        if [ -d web-demo/build-web ]; then
+          cp web-demo/build-web/* docs/demo/ 2>/dev/null || true
+        elif [ -d web-demo ]; then
+          cp web-demo/*.html web-demo/*.js web-demo/*.wasm docs/demo/ 2>/dev/null || true
+        fi
+        echo "=== docs/demo contents ==="
+        ls -la docs/demo/ 2>/dev/null || echo "(empty)"
+
     - uses: peaceiris/actions-gh-pages@v4
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}

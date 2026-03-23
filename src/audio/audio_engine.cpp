@@ -5,8 +5,12 @@
 #include <algorithm>
 #include <chrono>
 
+#ifdef __EMSCRIPTEN__
+#include <SDL.h>
+#else
 #ifdef _WIN32
 #include <pa_win_wasapi.h>
+#endif
 #endif
 
 namespace GuitarAmp {
@@ -18,6 +22,8 @@ AudioEngine::AudioEngine() {
 AudioEngine::~AudioEngine() {
     shutdown();
 }
+
+#ifndef __EMSCRIPTEN__
 
 bool AudioEngine::is_usb_device_name(const std::string& name) {
     // Convert to lowercase for matching
@@ -226,6 +232,15 @@ void AudioEngine::auto_detect_devices() {
         std::cout << "\n>> Using system default input/output devices." << std::endl;
     }
 }
+
+#endif // !__EMSCRIPTEN__ (PortAudio helper functions)
+
+// =============================================================================
+// Platform-specific: initialize / shutdown / start / stop / device management
+// =============================================================================
+
+#ifndef __EMSCRIPTEN__
+// --- Native PortAudio implementation ---
 
 bool AudioEngine::initialize() {
     PaError err = Pa_Initialize();
@@ -502,6 +517,115 @@ bool AudioEngine::set_output_device(int device_index) {
     return true;
 }
 
+#else // __EMSCRIPTEN__
+// --- Web / Emscripten SDL_Audio implementation ---
+
+void AudioEngine::sdl_audio_callback(void* userdata, Uint8* stream, int len) {
+    auto* engine = static_cast<AudioEngine*>(userdata);
+    auto* out = reinterpret_cast<float*>(stream);
+    int frame_count = len / static_cast<int>(sizeof(float));
+
+    // Web demo: process effects on silence (no mic input by default).
+    // The DSP chain still runs — user hears effects applied to silence/noise.
+    // A real input would require getUserMedia integration.
+    std::memset(out, 0, static_cast<size_t>(len));
+
+    // Feed a tiny test signal so users can hear effects are working
+    // (very quiet impulse click every ~1 second for reverb/delay demos)
+    static int click_counter = 0;
+    if (click_counter <= 0) {
+        if (frame_count > 0) out[0] = 0.5f;
+        click_counter = engine->sample_rate_;  // once per second
+    }
+    click_counter -= frame_count;
+
+    engine->process_audio(out, out, frame_count);
+}
+
+bool AudioEngine::initialize() {
+    if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) {
+        std::cerr << "SDL audio init failed: " << SDL_GetError() << std::endl;
+        return false;
+    }
+    initialized_ = true;
+    std::cout << "[Web] Audio subsystem initialized." << std::endl;
+    return true;
+}
+
+void AudioEngine::shutdown() {
+    stop();
+    if (initialized_) {
+        SDL_QuitSubSystem(SDL_INIT_AUDIO);
+        initialized_ = false;
+    }
+}
+
+bool AudioEngine::start() {
+    if (!initialized_ || running_) return false;
+
+    SDL_AudioSpec want, have;
+    SDL_memset(&want, 0, sizeof(want));
+    want.freq = sample_rate_;
+    want.format = AUDIO_F32;
+    want.channels = 1;
+    want.samples = static_cast<Uint16>(buffer_size_);
+    want.callback = sdl_audio_callback;
+    want.userdata = this;
+
+    sdl_audio_device_ = SDL_OpenAudioDevice(nullptr, 0, &want, &have, 0);
+    if (sdl_audio_device_ == 0) {
+        std::cerr << "[Web] Failed to open audio: " << SDL_GetError() << std::endl;
+        return false;
+    }
+
+    sample_rate_ = have.freq;
+    buffer_size_ = have.samples;
+
+    SDL_PauseAudioDevice(sdl_audio_device_, 0);  // start playback
+    running_ = true;
+
+    std::cout << "[Web] Audio stream started:" << std::endl;
+    std::cout << "  Rate:   " << sample_rate_ << " Hz" << std::endl;
+    std::cout << "  Buffer: " << buffer_size_ << " samples" << std::endl;
+    return true;
+}
+
+void AudioEngine::stop() {
+    if (sdl_audio_device_ != 0) {
+        if (running_) {
+            SDL_PauseAudioDevice(sdl_audio_device_, 1);
+            running_ = false;
+        }
+        SDL_CloseAudioDevice(sdl_audio_device_);
+        sdl_audio_device_ = 0;
+    }
+}
+
+bool AudioEngine::restart() {
+    stop();
+    bool ok = start();
+    if (!ok) {
+        last_error_ = "Failed to restart audio.";
+    } else {
+        last_error_.clear();
+    }
+    return ok;
+}
+
+// Web stubs for device management (browser handles devices)
+std::string AudioEngine::get_input_device_name() const { return "Browser Microphone"; }
+std::string AudioEngine::get_output_device_name() const { return "Browser Audio Output"; }
+std::vector<AudioDeviceInfo> AudioEngine::get_input_devices() const {
+    return {{0, "Browser Microphone", 1, 0, 48000.0, false}};
+}
+std::vector<AudioDeviceInfo> AudioEngine::get_output_devices() const {
+    return {{0, "Browser Audio Output", 0, 1, 48000.0, false}};
+}
+bool AudioEngine::set_input_device(int) { return true; }
+bool AudioEngine::set_output_device(int) { return true; }
+
+#endif // __EMSCRIPTEN__
+
 void AudioEngine::add_effect(std::shared_ptr<Effect> effect) {
     std::lock_guard<std::mutex> lock(effect_mutex_);
     effect->set_sample_rate(sample_rate_);
@@ -571,6 +695,7 @@ void AudioEngine::set_sample_rate(int rate) {
     }
 }
 
+#ifndef __EMSCRIPTEN__
 int AudioEngine::audio_callback(const void* input, void* output,
                                  unsigned long frame_count,
                                  const PaStreamCallbackTimeInfo* /*time_info*/,
@@ -588,6 +713,7 @@ int AudioEngine::audio_callback(const void* input, void* output,
     engine->process_audio(in, out, static_cast<int>(frame_count));
     return paContinue;
 }
+#endif
 
 void AudioEngine::process_audio(const float* input, float* output, int frame_count) {
     auto t_start = std::chrono::steady_clock::now();

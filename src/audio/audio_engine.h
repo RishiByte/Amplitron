@@ -4,7 +4,11 @@
 #include "audio/effect.h"
 #include "audio/recorder.h"
 #include "audio/spsc_queue.h"
+#ifndef __EMSCRIPTEN__
 #include <portaudio.h>
+#else
+#include <SDL.h>
+#endif
 #include <chrono>
 
 namespace GuitarAmp {
@@ -81,18 +85,22 @@ public:
     Recorder& recorder() { return recorder_; }
 
 private:
+    void process_audio(const float* input, float* output, int frame_count);
+
+#ifndef __EMSCRIPTEN__
     static int audio_callback(const void* input, void* output,
                               unsigned long frame_count,
                               const PaStreamCallbackTimeInfo* time_info,
                               PaStreamCallbackFlags status_flags,
                               void* user_data);
-
-    void process_audio(const float* input, float* output, int frame_count);
     void auto_detect_devices();
     static bool is_usb_device_name(const std::string& name);
     bool devices_share_host_api(int input_dev, int output_dev) const;
-
     PaStream* stream_ = nullptr;
+#else
+    static void sdl_audio_callback(void* userdata, Uint8* stream, int len);
+    SDL_AudioDeviceID sdl_audio_device_ = 0;
+#endif
     bool initialized_ = false;
     bool running_ = false;
 

@@ -16,7 +16,22 @@
 #include <csignal>
 #include <atomic>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 static std::atomic<bool> g_running{true};
+
+#ifdef __EMSCRIPTEN__
+static GuitarAmp::GuiManager* g_gui = nullptr;
+
+static void em_main_loop() {
+    if (!g_gui || !g_gui->run_frame()) {
+        g_running = false;
+        emscripten_cancel_main_loop();
+    }
+}
+#endif
 
 void signal_handler(int /*signal*/) {
     g_running = false;
@@ -103,9 +118,15 @@ int main(int /*argc*/, char* /*argv*/[]) {
     std::cout << "Amplitron is ready. Let's play!" << std::endl;
 
     // Main loop
+#ifdef __EMSCRIPTEN__
+    g_gui = &gui;
+    // 0 = use requestAnimationFrame, 1 = simulate infinite loop
+    emscripten_set_main_loop(em_main_loop, 0, 1);
+#else
     while (g_running && gui.run_frame()) {
         // GUI drives the frame rate via vsync
     }
+#endif
 
     // Cleanup
     std::cout << "Shutting down..." << std::endl;

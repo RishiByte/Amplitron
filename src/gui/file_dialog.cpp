@@ -1,6 +1,18 @@
 #include "gui/file_dialog.h"
 #include <cstring>
 
+#ifdef __EMSCRIPTEN__
+// No native file dialogs in a browser environment
+namespace GuitarAmp {
+std::string show_save_dialog(const std::string& /*default_name*/,
+                             const std::string& /*filter_desc*/,
+                             const std::string& /*filter_ext*/) {
+    return "";
+}
+} // namespace GuitarAmp
+
+#else // !__EMSCRIPTEN__
+
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -143,3 +155,5 @@ std::string show_save_dialog(const std::string& default_name,
 #endif
 
 } // namespace GuitarAmp
+
+#endif // !__EMSCRIPTEN__
