@@ -31,34 +31,46 @@ PedalBoard::PedalBoard(AudioEngine& engine, CommandHistory& history)
 /** @brief Default destructor. */
 PedalBoard::~PedalBoard() = default;
 
-/** @brief Update which pedals are visible based on current state.
- *  Shows the Amp Sim and all enabled effects that precede it in the chain.
- *  Post-amp effects are excluded from the pedal board. */
-void PedalBoard::update_visible_pedals() {
-    visible_indices_.clear();
-    auto& effects = engine_.effects();
-    int amp_idx = find_amp_index();
-
-    for (int i = 0; i < static_cast<int>(effects.size()); ++i) {
-        bool is_amp = (amp_idx >= 0 && i == amp_idx);
-        if (is_amp) {
-            visible_indices_.insert(i);
-        } else if (effects[i]->is_enabled() && (amp_idx < 0 || i < amp_idx)) {
-            visible_indices_.insert(i);
+/** @brief Recreate PedalWidget list to match the engine's current effect chain.
+ *  Visibility is preserved by effect pointer identity so that a footswitch-off pedal
+ *  stays on the board.  Brand-new effects (unrecognised pointers, e.g. after a preset
+ *  load or an add) are shown only if they are currently enabled or are the Amp Sim. */
+void PedalBoard::rebuild_widgets() {
+    // Snapshot which effect pointers are currently on the board before clearing.
+    std::set<Effect*> prev_visible;
+    for (int idx : visible_indices_) {
+        if (idx >= 0 && idx < static_cast<int>(widgets_.size())) {
+            prev_visible.insert(widgets_[idx]->get_effect().get());
         }
     }
-}
 
-/** @brief Recreate PedalWidget list to match the engine's current effect chain. */
-void PedalBoard::rebuild_widgets(bool /*show_all*/) {
     widgets_.clear();
+    visible_indices_.clear();
     auto& effects = engine_.effects();
+
+    // Determine amp position so post-amp effects are never shown on the board.
+    int amp_idx = find_amp_index();
+
     for (int i = 0; i < static_cast<int>(effects.size()); ++i) {
         auto w = std::make_unique<PedalWidget>(engine_, effects[i], i);
         w->set_history(&history_);
         widgets_.push_back(std::move(w));
+
+        Effect* ptr = effects[i].get();
+        bool is_amp = (amp_idx >= 0 && i == amp_idx);
+        bool is_post_amp = (amp_idx >= 0 && i > amp_idx);
+
+        // Post-amp effects are never shown on the pedalboard.
+        if (is_post_amp) continue;
+
+        if (prev_visible.count(ptr)) {
+            // Effect was already on the board — keep it visible regardless of enabled state.
+            visible_indices_.insert(i);
+        } else if (effects[i]->is_enabled() || is_amp) {
+            // New effect (add pedal, preset load, initial build) — show only if enabled.
+            visible_indices_.insert(i);
+        }
     }
-    update_visible_pedals();
 }
 
 /** @brief Find the index of the current AmpSimulator in the effect chain (-1 if none). */
@@ -232,9 +244,6 @@ void PedalBoard::render_amp_selector() {
 /** @brief Draw the signal flow line, render each pedal widget, and handle drag-and-drop reordering.
  *  Uses visibility set to determine which pedals to show. */
 void PedalBoard::render_signal_chain() {
-    // Refresh visibility every frame so toggling a pedal on/off takes effect immediately.
-    update_visible_pedals();
-
     // Build list of visible widget indices from visibility set
     std::vector<int> visible;
     for (int idx : visible_indices_) {
