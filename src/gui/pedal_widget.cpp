@@ -165,6 +165,11 @@ bool PedalWidget::render() {
         }
     }
 
+    // Dim the pedal body when bypassed so the inactive state is immediately obvious
+    if (!enabled && !is_amp) {
+        dl->AddRectFilled(p0, p1, Theme::PEDAL_BYPASS_OVERLAY, Theme::ROUNDING_MD);
+    }
+
     // --- Tuner custom display ---
     bool is_tuner = !is_amp && (std::strcmp(effect_->name(), "Tuner") == 0);
     if (is_tuner) {
@@ -299,7 +304,7 @@ bool PedalWidget::render() {
 
     // Knobs area (skip for tuner — it has a custom display above)
     // For amp, knobs start after the header; skip model selector param (index 0)
-    float knob_y_start = p0.y + 55;
+    float knob_y_start = p0.y + Theme::KNOB_Y_START;
     auto& params = effect_->params();
     int num_params = is_tuner ? 0 : static_cast<int>(params.size());
     int param_offset = 0;
@@ -308,10 +313,10 @@ bool PedalWidget::render() {
         num_params = std::max(0, num_params - 1);
     }
 
-    float knob_radius = 20.0f;
-    float knob_spacing_x = 85.0f;
-    float knob_spacing_y = 72.0f;
-    float knob_hit_size = knob_radius * 2.2f;
+    float knob_radius    = Theme::KNOB_RADIUS;
+    float knob_spacing_x = Theme::KNOB_SPACING_X;
+    float knob_spacing_y = Theme::KNOB_SPACING_Y;
+    float knob_hit_size  = knob_radius * Theme::KNOB_HIT_MULT;
 
     // Knob arc constants: 270° sweep from bottom-left to bottom-right
     constexpr float PI = 3.14159265f;
@@ -319,11 +324,20 @@ bool PedalWidget::render() {
     constexpr float ARC_START = 2.356f;   // 135° (7:30 position)
     constexpr float ARC_RANGE = 4.712f;   // 270° sweep clockwise
 
+    // Left edge of the 2-column grid, centered horizontally in the pedal
+    float knob_grid_left = p0.x + (pedal_width - 2.0f * knob_spacing_x) * 0.5f;
+
     for (int i = 0; i < num_params && i < 6; ++i) {
         int pi = i + param_offset; // actual param index
         int col = i % 2;
         int row = i / 2;
-        float kx = p0.x + 15 + col * knob_spacing_x;
+
+        // When the last knob is alone in its row, center it instead of
+        // leaving it left-aligned (e.g. a 3-knob pedal like Reverb).
+        bool is_last_alone = (i == num_params - 1) && (num_params % 2 == 1);
+        float kx = is_last_alone
+            ? p0.x + (pedal_width - knob_spacing_x) * 0.5f
+            : knob_grid_left + col * knob_spacing_x;
         float ky = knob_y_start + row * knob_spacing_y;
 
         ImVec2 knob_center = ImVec2(kx + knob_spacing_x * 0.5f, ky + knob_radius + 2);
@@ -520,12 +534,16 @@ bool PedalWidget::render() {
 
         // Tooltip
         if (is_hovered || is_active) {
+            std::string val_str  = Theme::formatParameterValue(params[pi].value, params[pi].unit);
+            std::string min_str  = Theme::formatParameterValue(params[pi].min_val, params[pi].unit);
+            std::string max_str  = Theme::formatParameterValue(params[pi].max_val, params[pi].unit);
             if (params[pi].tooltip.empty()) {
-                ImGui::SetTooltip("%s: %.2f %s\nRange: [%.2f, %.2f]\n\nRotate or drag to adjust\nScroll wheel also works\nShift=fine  Ctrl=coarse\nDbl-click=reset  Right-click=edit",
-                    params[pi].name.c_str(), params[pi].value, params[pi].unit.c_str(), params[pi].min_val, params[pi].max_val);
+                ImGui::SetTooltip("%s: %s\nRange: [%s, %s]\n\nRotate or drag to adjust\nScroll wheel also works\nShift=fine  Ctrl=coarse\nDbl-click=reset  Right-click=edit",
+                    params[pi].name.c_str(), val_str.c_str(), min_str.c_str(), max_str.c_str());
             } else {
-                ImGui::SetTooltip("%s: %.2f %s\nRange: [%.2f, %.2f]\n\n%s\n\nRotate or drag to adjust\nScroll wheel also works\nShift=fine  Ctrl=coarse\nDbl-click=reset  Right-click=edit",
-                    params[pi].name.c_str(), params[pi].value, params[pi].unit.c_str(), params[pi].min_val, params[pi].max_val, params[pi].tooltip.c_str());
+                ImGui::SetTooltip("%s: %s\nRange: [%s, %s]\n\n%s\n\nRotate or drag to adjust\nScroll wheel also works\nShift=fine  Ctrl=coarse\nDbl-click=reset  Right-click=edit",
+                    params[pi].name.c_str(), val_str.c_str(), min_str.c_str(), max_str.c_str(),
+                    params[pi].tooltip.c_str());
             }
         }
 
@@ -539,25 +557,35 @@ bool PedalWidget::render() {
         ImGui::TextUnformatted(pname);
         ImGui::PopStyleColor();
 
-        // Value text above knob (centered)
-        char val_buf[32];
-        snprintf(val_buf, sizeof(val_buf), "%.1f", params[pi].value);
-        ImVec2 val_size = ImGui::CalcTextSize(val_buf);
+        // Value text above knob (centered), using unit-aware formatter
+        std::string val_display = Theme::formatParameterValue(params[pi].value, params[pi].unit);
+        ImVec2 val_size = ImGui::CalcTextSize(val_display.c_str());
         ImGui::SetCursorScreenPos(ImVec2(
             knob_center.x - val_size.x * 0.5f,
             knob_center.y - knob_radius - 14));
         ImGui::PushStyleColor(ImGuiCol_Text,
             is_active ? Theme::GoldHot() :
                         Theme::TextDim());
-        ImGui::TextUnformatted(val_buf);
+        ImGui::TextUnformatted(val_display.c_str());
         ImGui::PopStyleColor();
     }
 
     // knob_was_active_ is updated per-knob inside the loop above
 
+    // LED tooltip — hover area over the LED indicator
+    if (!is_amp) {
+        float led_x = p0.x + pedal_width - 25;
+        float led_y = p0.y + 20;
+        ImGui::SetCursorScreenPos(ImVec2(led_x - 10, led_y - 10));
+        ImGui::InvisibleButton("##led_tip", ImVec2(20, 20));
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip(enabled ? "Effect active" : "Effect bypassed");
+        }
+    }
+
     // Footswitch (toggle on/off) — amps are always on, no footswitch
     if (!is_amp) {
-        float switch_y = p0.y + pedal_height - 55;
+        float switch_y = p0.y + pedal_height - Theme::SWITCH_BOTTOM_OFFSET;
         float switch_x = p0.x + (pedal_width - 50) / 2;
         ImGui::SetCursorScreenPos(ImVec2(switch_x, switch_y));
 
@@ -588,6 +616,9 @@ bool PedalWidget::render() {
         snprintf(remove_label, sizeof(remove_label), "X##rm%d", index_);
         if (ImGui::SmallButton(remove_label)) {
             should_remove = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Remove %s from chain", effect_->name());
         }
         ImGui::PopStyleColor(2);
     }

@@ -279,6 +279,54 @@ bool GuiManager::initialize(int width, int height) {
     ImGui::StyleColorsDark();
     Theme::ApplyStyle();
 
+    // --- DPI scaling and font loading ---
+    // Compute scale by comparing the OpenGL drawable size to the logical window size.
+    // On Retina / high-DPI displays this ratio is typically 2.0.
+    float dpi_scale = 1.0f;
+    {
+        int draw_w = window_width_, draw_h = window_height_;
+        SDL_GL_GetDrawableSize(window_, &draw_w, &draw_h);
+        if (window_width_ > 0)
+            dpi_scale = static_cast<float>(draw_w) / static_cast<float>(window_width_);
+    }
+
+    // Try to load Roboto-Medium at the DPI-scaled size; fall back to the
+    // default ImGui bitmap font when no TTF file can be found.
+    {
+        const float base_font_size = 14.0f;
+        const float scaled_size    = base_font_size * dpi_scale;
+
+        ImFont* loaded_font = nullptr;
+        auto try_font = [&](const std::string& path) {
+            if (!loaded_font)
+                loaded_font = io.Fonts->AddFontFromFileTTF(path.c_str(), scaled_size);
+        };
+
+        // 1. Next to the executable (installed / copied by CMake)
+        char* base_path = SDL_GetBasePath();
+        if (base_path) {
+            try_font(std::string(base_path) + "assets/fonts/Roboto-Medium.ttf");
+            SDL_free(base_path);
+        }
+        // 2. Relative to CWD (running from project root)
+        try_font("assets/fonts/Roboto-Medium.ttf");
+        try_font("../assets/fonts/Roboto-Medium.ttf");
+        // 3. ImGui bundled fonts (development fallback)
+        try_font("external/imgui/misc/fonts/Roboto-Medium.ttf");
+        try_font("../external/imgui/misc/fonts/Roboto-Medium.ttf");
+
+        if (!loaded_font)
+            io.Fonts->AddFontDefault();
+
+        // The font is rasterised at base_size * dpi_scale (physical pixels).
+        // FontGlobalScale = 1/dpi_scale maps it back to logical pixels so all
+        // layout coordinates (padding, widget sizes, hardcoded heights) stay in
+        // the same logical-pixel space as the style values set in ApplyStyle().
+        // Do NOT call ScaleAllSizes — that would double the padding/rounding in
+        // logical-pixel space and break every fixed-height container.
+        io.FontGlobalScale = 1.0f / dpi_scale;
+    }
+
     // Load window icon from assets/icon.svg (resolve path relative to executable)
     {
         std::string icon_path;
@@ -724,7 +772,7 @@ void GuiManager::render_menu_bar() {
 
         if (show_update) {
             ImGui::SameLine(bar_w - 600);
-            ImGui::TextColored(Theme::GoldHot(), "New Release: %s", update_version.c_str());
+            ImGui::TextColored(Theme::GoldHot(), "New Release Available: %s", update_version.c_str());
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip("Click to open release in browser");
                 ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
@@ -1090,7 +1138,8 @@ void GuiManager::render_recording_controls() {
     bool is_paused = rec.is_paused();
     bool has_unsaved = rec.has_unsaved();
 
-    float panel_height = is_recording ? 120.0f : 40.0f;
+    // Height = button_height + 2*(WindowPadding.y + ChildBorderSize) = B + 18
+    float panel_height = is_recording ? 120.0f : 46.0f;
     ImGui::BeginChild("RecordingPanel", ImVec2(0, panel_height), true,
                        ImGuiWindowFlags_NoScrollbar);
 
@@ -1220,6 +1269,12 @@ void GuiManager::render_recording_controls() {
 
     } else if (has_unsaved) {
         // === UNSAVED RECORDING ===
+        {
+            float avail = ImGui::GetContentRegionAvail().y;
+            float row_h = ImGui::GetFrameHeight();
+            float offset = std::max(0.0f, (avail - row_h) * 0.5f);
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + offset);
+        }
         ImGui::TextColored(Theme::Gold(), "Recording complete");
         ImGui::SameLine();
         ImGui::Text("  %.1f s  |  ", rec.get_duration());
@@ -1244,6 +1299,12 @@ void GuiManager::render_recording_controls() {
 
     } else {
         // === READY STATE ===
+        {
+            float avail = ImGui::GetContentRegionAvail().y;
+            constexpr float row_h = 28.0f;
+            float offset = std::max(0.0f, (avail - row_h) * 0.5f);
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + offset);
+        }
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.5f, 0.05f, 0.05f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.7f, 0.1f, 0.1f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.9f, 0.15f, 0.15f, 1.0f));

@@ -285,8 +285,18 @@ else() # NOT EMSCRIPTEN
     )
     add_dependencies(copy_presets guitar-amp)
 
+    # Copy fonts into build directory alongside the executable
+    add_custom_target(copy_fonts ALL
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_SOURCE_DIR}/assets/fonts"
+            "$<TARGET_FILE_DIR:guitar-amp>/assets/fonts"
+        COMMENT "Copying fonts to build directory"
+    )
+    add_dependencies(copy_fonts guitar-amp)
+
     # Install
     install(TARGETS guitar-amp RUNTIME DESTINATION bin)
     install(DIRECTORY presets DESTINATION bin)
+    install(DIRECTORY assets/fonts DESTINATION bin/assets)
 
 endif() # EMSCRIPTEN

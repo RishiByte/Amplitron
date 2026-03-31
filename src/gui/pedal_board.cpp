@@ -84,7 +84,14 @@ int PedalBoard::find_amp_index() const {
 
 /** @brief Render the toolbar (add/reset) and the scrollable signal chain area. */
 void PedalBoard::render() {
-    ImGui::BeginChild("PedalToolbar", ImVec2(0, 35), true);
+    ImGui::BeginChild("PedalToolbar", ImVec2(0, 40), true);
+    // Vertically center the single button row so top and bottom padding are equal
+    {
+        float avail = ImGui::GetContentRegionAvail().y;
+        float row_h = ImGui::GetFrameHeight();
+        float offset = std::max(0.0f, (avail - row_h) * 0.5f);
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + offset);
+    }
     render_add_pedal_menu();
     ImGui::SameLine();
 
