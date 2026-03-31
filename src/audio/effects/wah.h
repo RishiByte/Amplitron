@@ -24,6 +24,9 @@ private:
 
     // Smoothed sweep position (avoids zipper noise)
     float sweep_smooth_ = 0.5f;
+
+    // Smoothed Q / resonance (avoids zipper noise on knob moves)
+    float q_smooth_ = 3.5f;
 };
 
 } // namespace GuitarAmp

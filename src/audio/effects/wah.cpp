@@ -26,10 +26,7 @@ void WahPedal::process(float* buffer, int num_samples) {
     float atk_coeff = std::exp(-1.0f / (sample_rate_ * atk_ms  * 0.001f));
     float rel_coeff = std::exp(-1.0f / (sample_rate_ * rel_ms  * 0.001f));
 
-    // Damping factor for SVF (inverse of Q)
-    float q_damp = 1.0f / q;
-
-    // Sweep smoothing (~5 ms time constant — removes zipper noise on knob moves)
+    // Sweep/Q smoothing (~5 ms time constant — removes zipper noise on knob moves)
     float smooth_coeff = std::exp(-1.0f / (sample_rate_ * 0.005f));
 
     for (int i = 0; i < num_samples; ++i) {
@@ -49,8 +46,12 @@ void WahPedal::process(float* buffer, int num_samples) {
             target_sweep = sweep;
         }
 
-        // Smooth sweep position to prevent discontinuities
+        // Smooth sweep and Q positions to prevent discontinuities
         sweep_smooth_ += (1.0f - smooth_coeff) * (target_sweep - sweep_smooth_);
+        q_smooth_     += (1.0f - smooth_coeff) * (q           - q_smooth_);
+
+        // Damping factor for SVF (inverse of smoothed Q)
+        float q_damp = 1.0f / q_smooth_;
 
         // --- Map sweep 0→1 to centre frequency 350 Hz → 2500 Hz (exponential) ---
         constexpr float FREQ_LO = 350.0f;
@@ -66,7 +67,7 @@ void WahPedal::process(float* buffer, int num_samples) {
         svf_lp_     = f_coeff * svf_bp_ + svf_lp_;
 
         // Bandpass output boosted by Q for the classic resonant wah peak
-        float wet = svf_bp_ * q * 0.5f;
+        float wet = svf_bp_ * q_smooth_ * 0.5f;
 
         buffer[i] = dry * (1.0f - mix_) + wet * mix_;
     }
@@ -77,6 +78,7 @@ void WahPedal::reset() {
     svf_bp_      = 0.0f;
     envelope_    = 0.0f;
     sweep_smooth_ = 0.5f;
+    q_smooth_    = 3.5f;
 }
 
 } // namespace GuitarAmp

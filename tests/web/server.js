@@ -39,7 +39,7 @@ const server = http.createServer((req, res) => {
   let filePath = path.join(WEB_DIR, safePath);
 
   // Serve index.html for directory requests
-  if (filePath === WEB_DIR || filePath.endsWith('/')) {
+  if (filePath === WEB_DIR || filePath.endsWith(path.sep)) {
     filePath = path.join(filePath, 'index.html');
   }
 

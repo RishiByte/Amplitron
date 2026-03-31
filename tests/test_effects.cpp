@@ -541,6 +541,7 @@ TEST(all_effects_handle_silence) {
         std::make_shared<CabinetSim>(),
         std::make_shared<AmpSimulator>(),
         std::make_shared<TunerPedal>(),
+        std::make_shared<WahPedal>(),
     };
 
     float buf[256];

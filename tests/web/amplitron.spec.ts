@@ -229,11 +229,9 @@ test.describe('Canvas Rendering', () => {
       return pixels.some(v => v !== 0);
     });
 
-    // Note: this assertion may legitimately fail in environments where the GPU
-    // is fully emulated and the canvas back-buffer is cleared before readPixels
-    // is called.  If this becomes flaky in CI, change the assertion to a soft
-    // check or move it to a separate flaky-test bucket.
-    expect(hasNonBlackPixels).toBe(true);
+    // Soft assertion: may legitimately be false when the GPU is fully emulated
+    // and the canvas back-buffer is cleared before readPixels is called.
+    expect.soft(hasNonBlackPixels).toBe(true);
   });
 });
 
@@ -283,19 +281,18 @@ test.describe('SharedArrayBuffer & Service Worker', () => {
     // Give the browser time to complete service-worker registration
     await page.waitForTimeout(2_000);
 
-    const [sabAvailable, swCount] = await page.evaluate(async () => {
-      const sab = typeof SharedArrayBuffer !== 'undefined';
+    const [crossOriginIsolated, swCount] = await page.evaluate(async () => {
       const regs = await navigator.serviceWorker.getRegistrations();
-      return [sab, regs.length] as [boolean, number];
+      return [window.crossOriginIsolated, regs.length] as [boolean, number];
     });
 
-    // SAB must be available — either via COOP/COEP headers (our server) or
-    // via the COI service worker after a reload
-    expect(sabAvailable).toBe(true);
+    // The page must be cross-origin isolated (either via COOP/COEP headers from
+    // the server or via the COI service worker after a reload)
+    expect(crossOriginIsolated).toBe(true);
 
-    // Document that the service worker registration status was observed
-    // (may be 0 if the server headers already satisfy the browser's requirements)
-    expect(swCount).toBeGreaterThanOrEqual(0); // always true; logged for debugging
+    // When crossOriginIsolated is satisfied by the server headers alone,
+    // coi-serviceworker.js registers 0 service workers; log for debugging
+    expect(typeof swCount).toBe('number');
   });
 });
 
