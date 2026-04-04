@@ -151,7 +151,8 @@ TEST(preset_list_finds_files) {
     engine.initialize();
     engine.add_effect(std::make_shared<NoiseGate>());
 
-    std::string path = "presets/test_list_preset.json";
+    std::string dir = PresetManager::get_presets_dir();
+    std::string path = dir + "/test_list_preset.json";
     PresetManager::save_preset(path, "ListTest", "", engine);
 
     auto presets = PresetManager::list_presets();

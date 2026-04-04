@@ -88,5 +88,45 @@ Because the UI Agent and the DSP Agents operate on entirely different threads (w
 * **Parameter Smoothing:** DSP Agents utilize one-pole filters internally on their parameter inputs. If the UI Agent jumps a parameter from `0.1` to `0.9` instantly, the DSP Agent interpolates the value over several samples to prevent audible "zipper" noise or clicking.
 
 ---
+
+## 4. Testing Protocol
+
+At the end of any coding task (new feature, bug fix, refactor), run the full test suite before considering the task complete.
+
+```bash
+cmake --build build --target amplitron-tests && ./build/amplitron-tests
+```
+
+* All tests must pass (0 failed) before the task is done.
+* If tests fail, fix the root cause — do not skip or comment out tests.
+* If you add a new DSP effect or system agent, add corresponding tests in `tests/`.
+
+---
+
+## Updating `claude.md`
+
+At the end of any task that meaningfully changes the system architecture, update this file to keep it accurate. Follow these rules:
+
+### When to update
+- A new DSP effect agent is added or removed — update Section 2 and the agent count in the footer.
+- A system-level agent (`audio_engine`, `gui_manager`, `pedal_board`, etc.) has its responsibilities materially changed — update its entry in Section 1.
+- A new inter-thread communication pattern or concurrency mechanism is introduced — update Section 3.
+- The sample rate range, buffer size range, or safety clamping behaviour changes — update Section 1.1.
+- Do **not** update for purely internal refactors (renames, code style changes) that leave the observable architecture unchanged.
+
+### What to update
+- **Agent descriptions:** Keep the one-line role and bullet responsibilities accurate. Do not pad with implementation details that belong in code comments.
+- **Footer agent counts:** The line `12 DSP effects, 7 system agents` must reflect the actual current counts after every structural addition or removal.
+- **Section headings:** If a new category of DSP agent is introduced (e.g. a new subsection under Section 2), add it with the same format as existing subsections.
+
+### How to update
+1. Read the current `CLAUDE.md` fully before editing.
+2. Make the minimal accurate change — do not rewrite sections that are still correct.
+3. Keep the agent description style consistent: bold name, parenthetical role label, then brief prose + bullet responsibilities.
+4. Do not add implementation details (algorithm internals, variable names) unless they are architecturally significant (e.g. the YIN algorithm in TunerPedal is worth naming; an internal loop counter is not).
+
+
+---
 **Maintained by:** [@sudip-mondal-2002](https://github.com/sudip-mondal-2002)
 **Architecture Reference** — 12 DSP effects, 7 system agents
+
