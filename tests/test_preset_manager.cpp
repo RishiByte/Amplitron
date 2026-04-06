@@ -202,22 +202,12 @@ TEST(preset_set_presets_dir_copies_bundled_presets) {
     // Verify the directory exists
     ASSERT_TRUE(file_exists(test_dir));
 
-    // Count files in the test directory
+    // Count JSON files in the test directory
     std::vector<std::string> test_dir_files;
-    #ifdef _WIN32
-        std::string cmd = "dir /b \"" + test_dir + "\\*.json\" 2>nul | find \"\"";
-    #else
-        std::string cmd = "find \"" + test_dir + "\" -name '*.json' -type f";
-    #endif
-    FILE* fp = popen(cmd.c_str(), "r");
-    if (fp) {
-        char buf[512];
-        while (fgets(buf, sizeof(buf), fp)) {
-            std::string line = buf;
-            if (!line.empty() && line.back() == '\n') line.pop_back();
-            if (!line.empty()) test_dir_files.push_back(line);
+    for (const auto& entry : std::filesystem::directory_iterator(test_dir)) {
+        if (entry.path().extension() == ".json") {
+            test_dir_files.push_back(entry.path().string());
         }
-        pclose(fp);
     }
 
     // We should have copied presets to the new directory
@@ -238,9 +228,5 @@ TEST(preset_set_presets_dir_copies_bundled_presets) {
 
     // Cleanup - reset to default and remove test directory
     PresetManager::set_presets_dir("");
-    #ifdef _WIN32
-        system(("rmdir /s /q \"" + test_dir + "\" >nul 2>&1").c_str());
-    #else
-        system(("rm -rf \"" + test_dir + "\" 2>/dev/null").c_str());
-    #endif
+    std::filesystem::remove_all(test_dir);
 }
