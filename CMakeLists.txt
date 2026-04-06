@@ -265,9 +265,9 @@ else() # NOT EMSCRIPTEN
         src/audio/effects/pitch_shifter.cpp
     )
 
-    add_executable(Amplitron-tests ${TEST_SOURCES} ${CORE_SOURCES})
+    add_executable(amplitron-tests ${TEST_SOURCES} ${CORE_SOURCES})
 
-    target_include_directories(Amplitron-tests PRIVATE
+    target_include_directories(amplitron-tests PRIVATE
         ${CMAKE_SOURCE_DIR}/src
         ${CMAKE_SOURCE_DIR}/tests
         ${IMGUI_DIR}
@@ -277,18 +277,18 @@ else() # NOT EMSCRIPTEN
         ${OPENGL_INCLUDE_DIR}
     )
 
-    target_link_libraries(Amplitron-tests PRIVATE
+    target_link_libraries(amplitron-tests PRIVATE
         ${PORTAUDIO_LIBRARIES}
         ${SDL2_LIBRARIES}
         ${OPENGL_LIBRARIES}
     )
 
     if(WIN32)
-        target_link_libraries(Amplitron-tests PRIVATE winmm ole32 setupapi)
+        target_link_libraries(amplitron-tests PRIVATE winmm ole32 setupapi)
     endif()
 
     if(UNIX AND NOT APPLE)
-        target_link_libraries(Amplitron-tests PRIVATE dl pthread)
+        target_link_libraries(amplitron-tests PRIVATE dl pthread)
     endif()
 
     # Copy presets into build directory alongside the executable
