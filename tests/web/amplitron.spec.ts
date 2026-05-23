@@ -466,3 +466,138 @@ test.describe('Web MIDI Support', () => {
     });
   });
 });
+test.describe('Modular Graph Canvas Interactions', () => {
+  async function waitForRuntime(page: Page) {
+    page.on('console', msg => console.log('BROWSER LOG:', msg.text()));
+    page.on('pageerror', err => console.error('BROWSER ERROR:', err.message));
+    await page.goto('/');
+    await page.waitForSelector('#loading.hidden', { timeout: 60_000 });
+    const overlay = page.locator('#audio-unlock');
+    if (await overlay.isVisible()) await overlay.click();
+    await page.waitForTimeout(500);
+  }
+
+  test('canvas pan via right-click drag shifts scrolling', async ({ page }) => {
+    await waitForRuntime(page);
+
+    const before = await page.evaluate(() => ({
+      x: Module.ccall('get_canvas_scroll_x', 'number', [], []),
+      y: Module.ccall('get_canvas_scroll_y', 'number', [], []),
+    }));
+
+    const canvas = page.locator('#canvas');
+    const box = await canvas.boundingBox();
+    if (!box) throw new Error('canvas not visible');
+
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    await page.mouse.click(cx, cy, { button: 'right' });
+    await page.mouse.move(cx, cy);
+    await page.mouse.down({ button: 'right' });
+    await page.mouse.move(cx + 80, cy + 60, { steps: 10 });
+    await page.mouse.up({ button: 'right' });
+
+    await page.waitForTimeout(200);
+
+    const after = await page.evaluate(() => ({
+      x: Module.ccall('get_canvas_scroll_x', 'number', [], []),
+      y: Module.ccall('get_canvas_scroll_y', 'number', [], []),
+    }));
+
+    expect(after.x).not.toBeCloseTo(before.x, 0);
+    expect(after.y).not.toBeCloseTo(before.y, 0);
+  });
+
+  test('two-finger touch gesture pans and zooms the canvas', async ({ page }) => {
+    await waitForRuntime(page);
+
+    const before = await page.evaluate(() => ({
+      zoom: Module.ccall('get_canvas_zoom', 'number', [], []),
+      sx: Module.ccall('get_canvas_scroll_x', 'number', [], []),
+    }));
+
+    await page.evaluate(() => {
+      Module.ccall('on_canvas_touch_gesture', null, ['number','number','number','number','number'], [30, 20, 0.15, 640, 360]);
+    });
+
+    const after = await page.evaluate(() => ({
+      zoom: Module.ccall('get_canvas_zoom', 'number', [], []),
+      sx: Module.ccall('get_canvas_scroll_x', 'number', [], []),
+    }));
+
+    expect(after.zoom).toBeGreaterThan(before.zoom);
+    expect(after.sx).not.toBeCloseTo(before.sx, 0);
+  });
+
+  test('adding a Splitter node increases the node count', async ({ page }) => {
+    await waitForRuntime(page);
+
+    const countBefore: number = await page.evaluate(() =>
+      Module.ccall('get_node_count', 'number', [], [])
+    );
+
+    await page.evaluate(() =>
+      Module.ccall('trigger_add_splitter_node', 'number', [], [])
+    );
+    await page.waitForTimeout(200);
+
+    const countAfter: number = await page.evaluate(() =>
+      Module.ccall('get_node_count', 'number', [], [])
+    );
+
+    expect(countAfter).toBe(countBefore + 1);
+
+    const hasSplitter: boolean = await page.evaluate(() =>
+      Module.ccall('has_node_of_type', 'boolean', ['number'], [1])
+    );
+    expect(hasSplitter).toBe(true);
+  });
+
+  test('drawing a cable between two nodes increases link count', async ({ page }) => {
+    await waitForRuntime(page);
+
+    const linksBefore: number = await page.evaluate(() =>
+      Module.ccall('get_link_count', 'number', [], [])
+    );
+
+    await page.evaluate(() => {
+      Module.ccall('trigger_add_splitter_node', 'number', [], []);
+    });
+    await page.waitForTimeout(100);
+
+    const result: number = await page.evaluate(() => {
+      const srcPin = Module.ccall('get_node_output_pin_by_index', 'number', ['number', 'number'], [2, 0]);
+      const dstPin = Module.ccall('get_node_input_pin_by_index', 'number', ['number', 'number'], [3, 0]);
+      return Module.ccall('trigger_add_link', 'number', ['number', 'number'], [srcPin, dstPin]);
+    });
+
+    const linksAfter: number = await page.evaluate(() =>
+      Module.ccall('get_link_count', 'number', [], [])
+    );
+
+    expect(linksAfter).toBeGreaterThan(linksBefore);
+  });
+
+  test('deleting a node decreases the node count', async ({ page }) => {
+    await waitForRuntime(page);
+
+    await page.evaluate(() =>
+      Module.ccall('trigger_add_splitter_node', 'number', [], [])
+    );
+    await page.waitForTimeout(100);
+
+    const countBefore: number = await page.evaluate(() =>
+      Module.ccall('get_node_count', 'number', [], [])
+    );
+
+    const deleted: boolean = await page.evaluate(() =>
+      Module.ccall('trigger_delete_last_node', 'boolean', [], [])
+    );
+    expect(deleted).toBe(true);
+
+    const countAfter: number = await page.evaluate(() =>
+      Module.ccall('get_node_count', 'number', [], [])
+    );
+    expect(countAfter).toBe(countBefore - 1);
+  });
+});

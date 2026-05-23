@@ -12,12 +12,38 @@ namespace Amplitron {
 
 void PedalBoard::render_signal_chain() {
     auto& ui_state = GuiGraphState::get_instance();
+    ui_state.canvas_hovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
+    float dt = ImGui::GetIO().DeltaTime;
+    float lerp_factor = 1.0f - std::exp(-30.0f * dt);
+    if (lerp_factor < 0.0f) lerp_factor = 0.0f;
+    if (lerp_factor > 1.0f) lerp_factor = 1.0f;
+    float old_zoom = ui_state.zoom;
+    if (std::abs(ui_state.target_zoom - ui_state.zoom) > 0.0001f) {
+        ui_state.zoom += (ui_state.target_zoom - ui_state.zoom) * lerp_factor;
+    } else {
+        ui_state.zoom = ui_state.target_zoom;
+    }
+    if (old_zoom != ui_state.zoom) {
+        float actual_factor = ui_state.zoom / old_zoom;
+        ImVec2 mouse_pos = ImGui::GetMousePos();
+        ui_state.scrolling.x = mouse_pos.x - (mouse_pos.x - ui_state.scrolling.x) * actual_factor;
+        ui_state.scrolling.y = mouse_pos.y - (mouse_pos.y - ui_state.scrolling.y) * actual_factor;
+        ui_state.target_scrolling = ui_state.scrolling;
+    }
+    if (std::abs(ui_state.target_scrolling.x - ui_state.scrolling.x) > 0.01f ||
+        std::abs(ui_state.target_scrolling.y - ui_state.scrolling.y) > 0.01f) {
+        ui_state.scrolling.x += (ui_state.target_scrolling.x - ui_state.scrolling.x) * lerp_factor;
+        ui_state.scrolling.y += (ui_state.target_scrolling.y - ui_state.scrolling.y) * lerp_factor;
+    } else {
+        ui_state.scrolling = ui_state.target_scrolling;
+    }
     auto& audio_graph = engine_.graph(); 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
     ImVec2 canvas_pos = ImGui::GetCursorScreenPos();
     ImVec2 canvas_size = ImGui::GetContentRegionAvail();
     ImVec2 canvas_end = ImVec2(canvas_pos.x + canvas_size.x, canvas_pos.y + canvas_size.y);
+    ui_state.last_canvas_pos = canvas_pos;
 
     ImGui::SetCursorScreenPos(canvas_pos);
     ImGuiButtonFlags btn_flags = ImGuiButtonFlags_MouseButtonRight | ImGuiButtonFlags_MouseButtonMiddle;
@@ -37,20 +63,30 @@ void PedalBoard::render_signal_chain() {
                                   (ui_state.hand_tool_active && ImGui::IsMouseDragging(ImGuiMouseButton_Left)))) {
         ui_state.scrolling.x += ImGui::GetIO().MouseDelta.x;
         ui_state.scrolling.y += ImGui::GetIO().MouseDelta.y;
+        ui_state.target_scrolling = ui_state.scrolling;
     }
 
     // Zooming is now allowed in both fullscreen and normal modes
     if (ImGui::IsItemHovered()) {
+        float scroll_x = ImGui::GetIO().MouseWheelH;
         float scroll_y = ImGui::GetIO().MouseWheel;
-        if (scroll_y != 0.0f) {
-            float zoom_factor = (scroll_y > 0) ? 1.1f : (1.0f / 1.1f);
-            ImVec2 mouse_pos = ImGui::GetMousePos();
-            ImVec2 mouse_in_canvas = ImVec2(mouse_pos.x - canvas_pos.x, mouse_pos.y - canvas_pos.y);
-            ui_state.scrolling.x = mouse_in_canvas.x - (mouse_in_canvas.x - ui_state.scrolling.x) * zoom_factor;
-            ui_state.scrolling.y = mouse_in_canvas.y - (mouse_in_canvas.y - ui_state.scrolling.y) * zoom_factor;
-            ui_state.zoom *= zoom_factor;
-            if (ui_state.zoom < 0.2f) ui_state.zoom = 0.2f;
-            if (ui_state.zoom > 5.0f) ui_state.zoom = 5.0f;
+        if (scroll_x != 0.0f || scroll_y != 0.0f) {
+            if (ImGui::GetIO().KeyCtrl) {
+                float zoom_factor = std::pow(1.1f, scroll_y);
+                ImVec2 mouse_pos = ImGui::GetMousePos();
+                ImVec2 mouse_in_canvas = ImVec2(mouse_pos.x - canvas_pos.x, mouse_pos.y - canvas_pos.y);
+                float old_zoom = ui_state.target_zoom;
+                float new_zoom = old_zoom * zoom_factor;
+                if (new_zoom < 0.2f) new_zoom = 0.2f;
+                if (new_zoom > 5.0f) new_zoom = 5.0f;
+                float actual_factor = new_zoom / old_zoom;
+                ui_state.target_scrolling.x = mouse_in_canvas.x - (mouse_in_canvas.x - ui_state.target_scrolling.x) * actual_factor;
+                ui_state.target_scrolling.y = mouse_in_canvas.y - (mouse_in_canvas.y - ui_state.target_scrolling.y) * actual_factor;
+                ui_state.target_zoom = new_zoom;
+            } else {
+                ui_state.target_scrolling.x += scroll_x * 20.0f;
+                ui_state.target_scrolling.y += scroll_y * 20.0f;
+            }
         }
     }
 
@@ -58,7 +94,10 @@ void PedalBoard::render_signal_chain() {
     ImGui::SetCursorScreenPos(ImVec2(canvas_pos.x + canvas_size.x - 70, canvas_pos.y + 10));
     if (ImGui::Button(ui_state.is_fullscreen ? "Exit FS" : "Full Screen")) {
         ui_state.is_fullscreen = !ui_state.is_fullscreen;
-        if (!ui_state.is_fullscreen) ui_state.zoom = 1.0f;
+        if (!ui_state.is_fullscreen) {
+            ui_state.zoom = 1.0f;
+            ui_state.target_zoom = 1.0f;
+        }
     }
     ImGui::SetItemAllowOverlap();
 
@@ -146,7 +185,11 @@ void PedalBoard::render_signal_chain() {
         if (target_widget) {
             ImGui::SetCursorScreenPos(node_screen_pos);
             ImGui::BeginGroup();
+#ifdef __EMSCRIPTEN__
+            ImGui::SetWindowFontScale(ui_state.zoom / ui_state.dpi_scale);
+#else
             ImGui::SetWindowFontScale(ui_state.zoom);
+#endif
             target_widget->render(ui_state.zoom); 
             ImGui::SetWindowFontScale(1.0f);
             ImGui::EndGroup();
@@ -172,7 +215,11 @@ void PedalBoard::render_signal_chain() {
                 node_layout.position.y += ImGui::GetIO().MouseDelta.y / ui_state.zoom;
             }
             ImVec2 text_pos = ImVec2(node_screen_pos.x + 12.0f * ui_state.zoom, node_screen_pos.y + 25.0f * ui_state.zoom);
+#ifdef __EMSCRIPTEN__
+            ImGui::SetWindowFontScale(ui_state.zoom / ui_state.dpi_scale);
+#else
             ImGui::SetWindowFontScale(ui_state.zoom);
+#endif
             draw_list->AddText(text_pos, IM_COL32(255, 255, 255, 255), node.name.c_str());
             ImGui::SetWindowFontScale(1.0f);
         }
@@ -182,7 +229,11 @@ void PedalBoard::render_signal_chain() {
             draw_list->AddRectFilled(node_screen_pos, node_end, IM_COL32(0, 0, 0, 180), Theme::ROUNDING_MD * ui_state.zoom);
             
             ImVec2 text_pos = ImVec2(node_screen_pos.x + 10.0f * ui_state.zoom, node_screen_pos.y + node_height - 25.0f * ui_state.zoom);
+#ifdef __EMSCRIPTEN__
+            ImGui::SetWindowFontScale(ui_state.zoom * 0.9f / ui_state.dpi_scale);
+#else
             ImGui::SetWindowFontScale(ui_state.zoom * 0.9f);
+#endif
             draw_list->AddText(text_pos, IM_COL32(255, 60, 60, 255), "DISCONNECTED");
             ImGui::SetWindowFontScale(1.0f);
         }
