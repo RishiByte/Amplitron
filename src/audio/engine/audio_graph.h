@@ -70,6 +70,11 @@ public:
   void set_mixer_input_gain(int node_id, size_t pin_index, float gain);
   void restore_input_pin(int node_id, int pin_id, int index, float gain);
 
+  // Dynamic Splitter API
+  bool add_output_pin(int node_id);
+  bool remove_output_pin(int node_id, int pin_id = -1);
+  void restore_output_pin(int node_id, int pin_id, int index);
+
   // Accessors
   const std::vector<int> &get_sorted_nodes() const { return sorted_node_ids_; }
   const std::vector<DSPNode> &get_nodes() const { return nodes_; }

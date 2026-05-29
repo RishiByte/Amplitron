@@ -398,9 +398,18 @@ bool AudioGraph::remove_input_pin(int node_id, int pin_id) {
 void AudioGraph::restore_input_pin(int node_id, int pin_id, int index, float gain) {
   for (auto &node : nodes_) {
     if (node.id == node_id) {
-        if (index >= 0 && index <= node.input_pin_ids.size()) {
-            node.input_pin_ids.insert(node.input_pin_ids.begin() + index, pin_id);
-            node.input_gains.insert(node.input_gains.begin() + index, gain);
+        if (index >= 0) {
+            size_t idx = static_cast<size_t>(index);
+            if (idx <= node.input_pin_ids.size()) {
+                node.input_pin_ids.insert(node.input_pin_ids.begin() + idx, pin_id);
+                while (node.input_gains.size() < idx) {
+                    node.input_gains.push_back(1.0f);
+                }
+                node.input_gains.insert(node.input_gains.begin() + idx, gain);
+            } else {
+                node.input_pin_ids.push_back(pin_id);
+                node.input_gains.push_back(gain);
+            }
         } else {
             node.input_pin_ids.push_back(pin_id);
             node.input_gains.push_back(gain);
@@ -418,6 +427,65 @@ void AudioGraph::set_mixer_input_gain(int node_id, size_t pin_index, float gain)
         node.input_gains[pin_index] = std::clamp(gain, 0.0f, 2.0f);
       }
       break;
+    }
+  }
+}
+
+bool AudioGraph::add_output_pin(int node_id) {
+  for (auto &node : nodes_) {
+    if (node.id == node_id && node.routing_type == NodeRoutingType::Splitter) {
+      if (node.output_pin_ids.size() < 8) {
+        node.output_pin_ids.push_back(next_id_++);
+        return true;
+      }
+      return false;
+    }
+  }
+  return false;
+}
+
+bool AudioGraph::remove_output_pin(int node_id, int pin_id) {
+  for (auto &node : nodes_) {
+    if (node.id == node_id && node.routing_type == NodeRoutingType::Splitter) {
+      if (node.output_pin_ids.size() > 2) {
+        int index_to_remove = -1;
+        if (pin_id == -1) {
+           index_to_remove = node.output_pin_ids.size() - 1;
+        } else {
+           for (size_t i = 0; i < node.output_pin_ids.size(); ++i) {
+               if (node.output_pin_ids[i] == pin_id) {
+                   index_to_remove = i;
+                   break;
+               }
+           }
+        }
+        if (index_to_remove != -1) {
+            int pin_to_remove = node.output_pin_ids[index_to_remove];
+            for (const auto &link : links_) {
+              if (link.source_pin_id == pin_to_remove) {
+                return false;
+              }
+            }
+            node.output_pin_ids.erase(node.output_pin_ids.begin() + index_to_remove);
+            return true;
+        }
+      }
+      return false;
+    }
+  }
+  return false;
+}
+
+void AudioGraph::restore_output_pin(int node_id, int pin_id, int index) {
+  for (auto &node : nodes_) {
+    if (node.id == node_id && node.routing_type == NodeRoutingType::Splitter) {
+        if (index >= 0 && index <= node.output_pin_ids.size()) {
+            node.output_pin_ids.insert(node.output_pin_ids.begin() + index, pin_id);
+        } else {
+            node.output_pin_ids.push_back(pin_id);
+        }
+        if (pin_id >= next_id_) next_id_ = pin_id + 1;
+        break;
     }
   }
 }
